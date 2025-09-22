@@ -1,5 +1,6 @@
 step1: 检测血条
   标注固定位置（x,y,w,h）和颜色
+  
 step2: 检测人脸，使用yolo 
   用预训练 YOLO 人脸检测模型 → 从 SF6 视频里截取人脸框-https://github.com/lindevs/yolov8-face/releases
   保存每张人脸到文件夹（例如 faces/frame_0001_ryu.png）
