@@ -1,64 +1,68 @@
-import cv2
-import numpy as np
-import tqdm
-import csv
-import os
+import cv2, numpy as np, csv, os, threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-VIDEO = r"C:\Users\huang\Videos\SF6\SF6.mp4"
-ALPHA = 0.08
-
+VIDEO   = r"C:\Users\huang\Videos\SF6\SF6.mp4"
+CSV_OUT = "best_hp_roi.csv"
+# HSV 阈值保持原样
 def hp_ratio(roi):
     roi = cv2.GaussianBlur(roi, (3, 3), 0)
     hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    mask_red  = cv2.inRange(hsv, (165, 250, 115), (170, 255, 210))
-    mask_blue = cv2.inRange(hsv, (100, 200, 130), (115, 225, 190))
-    mask_yellow = cv2.inRange(hsv, (25, 50, 240), (35, 150, 255))
-    mask = mask_red | mask_blue | mask_yellow
+    mask = (cv2.inRange(hsv, (165, 250, 115), (170, 255, 210)) |
+            cv2.inRange(hsv, (100, 200, 130), (115, 225, 190)) |
+            cv2.inRange(hsv, (25,  50, 240), (35, 150, 255)))
     col_flag = np.sum(mask > 0, axis=0) >= max(1, roi.shape[0] // 10)
-    return np.count_nonzero(col_flag) / len(col_flag), mask
+    return np.count_nonzero(col_flag) / len(col_flag)
 
-def xyz_off_scan():
+# 每个线程独立打开视频，避免锁
+def eval_one_cfg(args):
+    x, y, w, off = args
     cap = cv2.VideoCapture(VIDEO)
-    total = 100                      # 只读前 100 帧
-    best_cfg = None
-    best_score = -1.0
-
-    for x in range(185 - 5, 185 + 6):          # x=180→190
-        for y in range(68 - 5, 68 + 6):        # y=63→73
-            for w in range(664 - 5, 664 + 6):  # w=659→669
-                for off in range(886 - 5, 886 + 6):  # off=881→891
-                    roi_left  = (x, y, w, 24)
-                    roi_right = (x + off, y, w, 24)   # 左右偏移可调
-                    max_left = max_right = 0.0
-
-                    for idx in tqdm.trange(total, desc=f"x={x},y={y},w={w},off={off}"):
-                        ret, frame = cap.read()
-                        if not ret: break
-                        left_r,  _  = hp_ratio(frame[roi_left[1]:roi_left[1]+roi_left[3], roi_left[0]:roi_left[0]+roi_left[2]])
-                        right_r, _  = hp_ratio(frame[roi_right[1]:roi_right[1]+roi_right[3], roi_right[0]:roi_right[0]+roi_right[2]])
-                        max_left  = max(max_left, left_r)
-                        max_right = max(max_right, right_r)
-
-                    score = max(max_left, max_right)
-                    print(f"x={x},y={y},w={w},off={off}: 双侧最大 = {score:.4f}  (left={max_left:.4f}, right={max_right:.4f})")
-
-                    if score > best_score:
-                        best_score = score
-                        best_cfg = (x, y, w, off, max_left, max_right)
-
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # 复位视频指针
-
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    best_l = best_r = 0.0
+    for idx in range(50):               # 只读前 50 帧
+        ret, frame = cap.read()
+        if not ret:
+            break
+        left  = hp_ratio(frame[y:y+24, x:x+w])
+        right = hp_ratio(frame[y:y+24, x+off:x+off+w])
+        best_l, best_r = max(best_l, left), max(best_r, right)
+        # 只要有一帧同时≥98 % 就立即算分并返回，省掉后面帧
+        if left >= 0.98 and right >= 0.98:
+            break
     cap.release()
-    if best_cfg:
-        x, y, w, off, l, r = best_cfg
-        print("\n=== 最优四维度坐标 ===")
-        print(f"ROI_LEFT  = ({x}, {y}, {w}, 24)")
-        print(f"ROI_RIGHT = ({x + off}, {y}, {w}, 24)")
-        print(f"偏移量 = {off}")
-        print(f"双侧最大值 = {best_score:.4f}  (left={l:.4f}, right={r:.4f})")
-    else:
-        print("未找到任何 CSV 文件！")
+    score = 1 - abs(best_l - 1) - abs(best_r - 1)
+    return (x, y, w, 24, off, score, best_l, best_r)
 
-print("=== 开始四维度网格扫描 (x±5, y±5, w±5, offset±5) ===")
-xyz_off_scan()
-print("全部 14641 组扫描完成！")
+# 生成任务
+tasks = [(x, y, w, off)
+         for x in range(185-5, 185+6)
+         for y in range(68-5, 68+6)
+         for w in range(665-5, 665+6)
+         for off in range(882-5, 882+6)]
+
+candidates = []
+print('=== 多线程扫描（100帧即停）===')
+with ThreadPoolExecutor(max_workers=os.cpu_count()) as pool:
+    futures = {pool.submit(eval_one_cfg, t): t for t in tasks}
+    for f in as_completed(futures):
+        x, y, w, h, off, score, l, r = f.result()
+        if l >= 0.97 and r >= 0.97:          # 只保留双边≥98 %
+            candidates.append((x, y, w, h, off, score, l, r))
+
+# 按 score 降序，取最佳
+candidates.sort(key=lambda x: x[5], reverse=True)
+if candidates:
+    best = candidates[0]
+    print('\n=== 前 100 帧内 双边≥97 % 的最佳组 ===')
+    print(f'ROI_LEFT  = {best[:4]}')
+    print(f'ROI_RIGHT = ({best[0]+best[4]}, {best[1]}, {best[2]}, {best[3]})')
+    print(f'偏移量 = {best[4]}  |  score={best[5]:.4f}  (L={best[6]:.4f}, R={best[7]:.4f})')
+
+    # 写 CSV
+    with open(CSV_OUT, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['x','y','w','h','offset','score','left','right'])
+        writer.writerows(candidates)
+    print(f'\n已写入 {len(candidates)} 组候选到 {CSV_OUT}')
+else:
+    print('前 100 帧内未出现双边同时≥97 % 的情况')
