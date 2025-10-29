@@ -8,6 +8,7 @@
 
 点击查看项目演示视频：
 [SF6_AICOACH.mp4](SF6_AICOACH.mp4)
+
 ![SF6 AI教练演示](SF6_AICOACH.gif)
 
 
