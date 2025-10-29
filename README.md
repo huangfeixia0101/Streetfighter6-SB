@@ -8,8 +8,8 @@
 
 点击查看项目演示视频：
 [SF6_AICOACH.mp4](SF6_AICOACH.mp4)
+![SF6 AI教练演示](SF6_AICOACH.gif)
 
-*(**提示**: 如果你想在 README 中直接嵌入视频，最好的方法是将其转换为 `.gif` 动图，然后使用 `![演示](SF6_AICOACH.gif)` 来插入。)*
 
 ---
 
