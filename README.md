@@ -1,10 +1,29 @@
-step1: 检测血条
-  标注固定位置（x,y,w,h）和颜色
-  
-step2: 检测人脸，使用yolo 
-  用预训练 YOLO 人脸检测模型 → 从 SF6 视频里截取人脸框-https://github.com/lindevs/yolov8-face/releases
-  保存每张人脸到文件夹（例如 faces/frame_0001_ryu.png）
-  用人脸特征聚类 / 相似度分类 → 自动把相同角色的脸放一起（这里可以用 face_recognition / DeepFace / InsightFace）
-  人工确认 / 重命名文件夹 → 给每个角色分配名字（Ken、Ryu、Chun-Li …）
-  转成 YOLO 标注格式（txt + 图片）
-  用 yolov8 重新训练，只识别 SF6 的人物脸
+# 🥊 街霸6 AI教练 (SF6 AI Coach)
+
+一个基于计算机视觉和大型模型的《街头霸王6》AI助手，用于实时分析对手动作并提供战术建议。
+
+---
+
+## 🚀 效果演示 (Demo)
+
+点击查看项目演示视频：
+[SF6_AICOACH.mp4](SF6_AICOACH.mp4)
+
+*(**提示**: 如果你想在 README 中直接嵌入视频，最好的方法是将其转换为 `.gif` 动图，然后使用 `![演示](SF6_AICOACH.gif)` 来插入。)*
+
+---
+
+## 🛠️ 核心流程 (Workflow)
+
+本项目的工作流主要分为以下三个核心步骤：
+
+### 1. 目标检测 (Step 1: Person Detection)
+* 使用 **YOLO** (You Only Look Once) 模型实时检测游戏画面中的关键目标（即玩家和对手）。
+
+### 2. 目标跟踪 (Step 2: Person Tracking)
+* 启动多目标跟踪算法（如 DeepSORT 或 ByteTrack），在视频帧之间持续**跟踪**检测到的人物，锁定对手的连续动态。
+
+### 3. VLM 动作分析与建议 (Step 3: VLM Analysis)
+* 将跟踪到的对手动作序列帧输入到**视觉语言模型 (VLM)**。
+* VLM 负责**识别**对手正在执行的具体动作（例如：释放了某个特定招式、跳跃、防御）。
+* 基于识别结果，AI 教练系统立即生成并**给出实时的出招建议**（例如：使用特定招式反击、格挡、跳跃规避等）。
